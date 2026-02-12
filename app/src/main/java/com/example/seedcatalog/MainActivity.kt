@@ -1,5 +1,6 @@
 package com.example.seedcatalog
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -14,7 +15,10 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
@@ -36,6 +40,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -49,6 +54,8 @@ import coil.compose.AsyncImage
 import com.example.seedcatalog.data.local.AppDatabase
 import com.example.seedcatalog.data.local.PacketLot
 import com.example.seedcatalog.data.local.PacketLotWithPhotos
+import com.example.seedcatalog.data.local.Photo
+import com.example.seedcatalog.data.local.PhotoType
 import com.example.seedcatalog.data.local.Plant
 import com.example.seedcatalog.data.local.PlantFilterOptions
 import com.example.seedcatalog.data.repository.OfflineSeedRepository
@@ -144,7 +151,10 @@ private fun SeedCatalogApp(seedViewModel: SeedViewModel = viewModel()) {
                 },
                 onUpdateLot = { seedViewModel.updatePacketLot(it) },
                 onDeleteLot = { seedViewModel.deletePacketLot(it) },
-                onAttachPhoto = { lotId, uri -> seedViewModel.addPhoto(lotId, uri) }
+                onAttachPhotos = { lotId, type, uris ->
+                    uris.forEach { uri -> seedViewModel.addPhoto(lotId, uri, type) }
+                },
+                onDeletePhoto = { seedViewModel.deletePhoto(it) }
             )
         }
     }
@@ -328,16 +338,32 @@ fun SeedDetailScreen(
     onCreateLot: (String, Int, String) -> Unit,
     onUpdateLot: (PacketLot) -> Unit,
     onDeleteLot: (PacketLot) -> Unit,
-    onAttachPhoto: (Int, String) -> Unit
+    onAttachPhotos: (Int, String, List<String>) -> Unit,
+    onDeletePhoto: (Photo) -> Unit
 ) {
+    val context = LocalContext.current
     var showLotDialog by rememberSaveable { mutableStateOf(false) }
     var editingLot by remember { mutableStateOf<PacketLot?>(null) }
     var lotForPhotoPicker by remember { mutableStateOf<PacketLot?>(null) }
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) {
-            lotForPhotoPicker?.let { onAttachPhoto(it.id, uri.toString()) }
-            lotForPhotoPicker = null
+    var pendingPhotoType by rememberSaveable { mutableStateOf(PhotoType.FRONT.dbValue) }
+    var showPhotoTypeDialog by rememberSaveable { mutableStateOf(false) }
+
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris ->
+        if (uris.isNotEmpty()) {
+            uris.forEach { uri ->
+                try {
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                } catch (_: SecurityException) {
+                }
+            }
+            lotForPhotoPicker?.let { lot ->
+                onAttachPhotos(lot.id, pendingPhotoType, uris.map { it.toString() })
+            }
         }
+        lotForPhotoPicker = null
     }
 
     Scaffold(topBar = { TopAppBar(title = { Text("Seed Detail") }) }) { paddingValues ->
@@ -381,27 +407,18 @@ fun SeedDetailScreen(
                                     TextButton(onClick = { onDeleteLot(lot) }) { Text("Delete") }
                                     TextButton(onClick = {
                                         lotForPhotoPicker = lot
-                                        launcher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                                    }) { Text("Attach Photo") }
+                                        showPhotoTypeDialog = true
+                                    }) { Text("Attach Photos") }
                                 }
 
                                 if (lotWithPhotos.photos.isEmpty()) {
                                     Text("No photos")
                                 } else {
-                                    lotWithPhotos.photos.forEach { photo ->
-                                        AsyncImage(
-                                            model = photo.uri,
-                                            contentDescription = "Photo for lot ${lot.lotCode}",
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(top = 4.dp),
-                                            contentScale = ContentScale.Crop
-                                        )
-                                        Text(
-                                            text = photo.uri,
-                                            style = MaterialTheme.typography.bodySmall
-                                        )
-                                    }
+                                    PhotoCarousel(
+                                        lotCode = lot.lotCode,
+                                        photos = lotWithPhotos.photos,
+                                        onDeletePhoto = onDeletePhoto
+                                    )
                                 }
                             }
                         }
@@ -410,6 +427,20 @@ fun SeedDetailScreen(
             }
             Button(onClick = onBack) { Text("Back") }
         }
+    }
+
+    if (showPhotoTypeDialog) {
+        PhotoTypeDialog(
+            onDismiss = {
+                showPhotoTypeDialog = false
+                lotForPhotoPicker = null
+            },
+            onSelectType = { type ->
+                pendingPhotoType = type
+                showPhotoTypeDialog = false
+                launcher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            }
+        )
     }
 
     if (showLotDialog) {
@@ -437,6 +468,64 @@ fun SeedDetailScreen(
         )
     }
 }
+
+@Composable
+private fun PhotoCarousel(
+    lotCode: String,
+    photos: List<Photo>,
+    onDeletePhoto: (Photo) -> Unit
+) {
+    val pagerState = rememberPagerState(pageCount = { photos.size })
+    val currentPhoto = photos[pagerState.currentPage]
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxWidth()) { page ->
+            val photo = photos[page]
+            AsyncImage(
+                model = photo.uri,
+                contentDescription = "Photo for lot $lotCode",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(220.dp),
+                contentScale = ContentScale.Crop
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("${photoTypeDisplay(currentPhoto.type)} • ${pagerState.currentPage + 1}/${photos.size}")
+            TextButton(onClick = { onDeletePhoto(currentPhoto) }) {
+                Text("Delete Photo")
+            }
+        }
+    }
+}
+
+@Composable
+private fun PhotoTypeDialog(
+    onDismiss: () -> Unit,
+    onSelectType: (String) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Choose photo type") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                PhotoType.entries.forEach { type ->
+                    TextButton(onClick = { onSelectType(type.dbValue) }, modifier = Modifier.fillMaxWidth()) {
+                        Text(type.displayName)
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+private fun photoTypeDisplay(dbValue: String): String =
+    PhotoType.entries.firstOrNull { it.dbValue == dbValue }?.displayName ?: dbValue
 
 @Composable
 private fun PlantDialog(

@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.seedcatalog.data.local.PacketLot
 import com.example.seedcatalog.data.local.PacketLotWithPhotos
+import com.example.seedcatalog.data.local.Photo
 import com.example.seedcatalog.data.local.Plant
 import com.example.seedcatalog.data.local.PlantFilterOptions
 import com.example.seedcatalog.data.repository.SeedRepository
@@ -129,8 +130,12 @@ class SeedViewModel(private val repository: SeedRepository) : ViewModel() {
         repository.deletePacketLot(packetLot)
     }
 
-    fun addPhoto(packetLotId: Int, uri: String) = viewModelScope.launch {
-        repository.addPhoto(packetLotId, uri)
+    fun addPhoto(packetLotId: Int, uri: String, type: String) = viewModelScope.launch {
+        repository.addPhoto(packetLotId, uri, type)
+    }
+
+    fun deletePhoto(photo: Photo) = viewModelScope.launch {
+        repository.deletePhoto(photo)
     }
 
     private data class SearchParams(

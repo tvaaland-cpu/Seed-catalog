@@ -119,8 +119,8 @@ class OfflineSeedRepository(
         packetLotDao.delete(packetLot)
     }
 
-    override suspend fun addPhoto(packetLotId: Int, uri: String) {
-        photoDao.insert(Photo(packetLotId = packetLotId, uri = uri))
+    override suspend fun addPhoto(packetLotId: Int, uri: String, type: String) {
+        photoDao.insert(Photo(packetLotId = packetLotId, uri = uri, type = type))
     }
 
     override suspend fun deletePhoto(photo: Photo) {
