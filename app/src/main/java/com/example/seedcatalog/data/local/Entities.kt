@@ -48,7 +48,8 @@ data class PacketLot(
 data class Photo(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val packetLotId: Int,
-    val uri: String
+    val uri: String,
+    val type: String = PhotoType.FRONT.dbValue
 )
 
 @Entity(

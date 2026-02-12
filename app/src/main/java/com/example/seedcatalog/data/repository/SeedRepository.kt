@@ -19,6 +19,6 @@ interface SeedRepository {
     suspend fun updatePacketLot(packetLot: PacketLot)
     suspend fun deletePacketLot(packetLot: PacketLot)
 
-    suspend fun addPhoto(packetLotId: Int, uri: String)
+    suspend fun addPhoto(packetLotId: Int, uri: String, type: String)
     suspend fun deletePhoto(photo: Photo)
 }
