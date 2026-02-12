@@ -1,6 +1,7 @@
 package com.example.seedcatalog
 
 import android.content.Intent
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
@@ -10,6 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -26,6 +28,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -46,6 +49,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -70,7 +74,11 @@ import com.example.seedcatalog.data.BackupManager
 import com.example.seedcatalog.ui.SeedViewModel
 import com.example.seedcatalog.ui.SeedViewModelFactory
 import com.example.seedcatalog.ui.theme.SeedCatalogTheme
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 
 sealed class Screen(val route: String) {
     data object SeedList : Screen("seedList")
@@ -647,11 +655,88 @@ private fun PlantDialog(
     var growingInstructions by rememberSaveable { mutableStateOf(initialGrowingInstructions) }
     var notes by rememberSaveable { mutableStateOf(initialNotes) }
 
+    var frontCapture by remember { mutableStateOf<Bitmap?>(null) }
+    var backCapture by remember { mutableStateOf<Bitmap?>(null) }
+    var closeUpCapture by remember { mutableStateOf<Bitmap?>(null) }
+    var ocrResult by remember { mutableStateOf<SeedPacketOcrResult?>(null) }
+    var isScanning by remember { mutableStateOf(false) }
+    var rawTextExpanded by rememberSaveable { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    val frontCaptureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) {
+        frontCapture = it
+    }
+    val backCaptureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) {
+        backCapture = it
+    }
+    val closeUpCaptureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) {
+        closeUpCapture = it
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                item { Text("Scan seed packet", style = MaterialTheme.typography.titleMedium) }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { frontCaptureLauncher.launch(null) }) { Text("Capture front") }
+                        Button(onClick = { backCaptureLauncher.launch(null) }) { Text("Capture back") }
+                        Button(onClick = { closeUpCaptureLauncher.launch(null) }) { Text("Capture close-up") }
+                    }
+                }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ScanCapturePreview(label = "Front", capture = frontCapture)
+                        ScanCapturePreview(label = "Back", capture = backCapture)
+                        ScanCapturePreview(label = "Close-up", capture = closeUpCapture)
+                    }
+                }
+                item {
+                    Button(
+                        onClick = {
+                            val captures = listOfNotNull(
+                                frontCapture?.let { "Front" to it },
+                                backCapture?.let { "Back" to it },
+                                closeUpCapture?.let { "Close-up" to it }
+                            )
+                            scope.launch {
+                                isScanning = true
+                                val result = runSeedPacketOcr(captures)
+                                ocrResult = result
+                                if (result.botanicalName.isNotBlank()) botanicalName = result.botanicalName
+                                if (result.variety.isNotBlank()) variety = result.variety
+                                if (result.brand.isNotBlank()) {
+                                    notes = listOf(notes, "Brand: ${result.brand}")
+                                        .filter { it.isNotBlank() }
+                                        .joinToString("\n")
+                                }
+                                isScanning = false
+                            }
+                        },
+                        enabled = !isScanning && listOf(frontCapture, backCapture, closeUpCapture).any { it != null },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (isScanning) "Scanning…" else "Run OCR and prefill")
+                    }
+                }
+                if (isScanning) {
+                    item { CircularProgressIndicator() }
+                }
+                ocrResult?.let { result ->
+                    item { Text("Likely botanical name: ${result.botanicalName.ifBlank { "Not found" }}") }
+                    item { Text("Likely variety: ${result.variety.ifBlank { "Not found" }}") }
+                    item { Text("Likely brand: ${result.brand.ifBlank { "Not found" }}") }
+                    item {
+                        TextButton(onClick = { rawTextExpanded = !rawTextExpanded }) {
+                            Text(if (rawTextExpanded) "Hide raw OCR text" else "Show raw OCR text")
+                        }
+                    }
+                    if (rawTextExpanded) {
+                        item { Text(result.mergedText.ifBlank { "No text recognized." }) }
+                    }
+                }
                 item { OutlinedTextField(value = botanicalName, onValueChange = { botanicalName = it }, label = { Text("Botanical name") }) }
                 item { OutlinedTextField(value = commonName, onValueChange = { commonName = it }, label = { Text("Common name") }) }
                 item { OutlinedTextField(value = variety, onValueChange = { variety = it }, label = { Text("Variety") }) }
@@ -726,4 +811,75 @@ private fun PacketLotDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
+}
+
+@Composable
+private fun ScanCapturePreview(label: String, capture: Bitmap?) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label, style = MaterialTheme.typography.labelSmall)
+        if (capture == null) {
+            Text("Not captured", style = MaterialTheme.typography.bodySmall)
+        } else {
+            Image(
+                bitmap = capture.asImageBitmap(),
+                contentDescription = "$label capture",
+                modifier = Modifier.height(64.dp)
+            )
+        }
+    }
+}
+
+private data class SeedPacketOcrResult(
+    val mergedText: String,
+    val botanicalName: String,
+    val variety: String,
+    val brand: String
+)
+
+private suspend fun runSeedPacketOcr(captures: List<Pair<String, Bitmap>>): SeedPacketOcrResult {
+    val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    return try {
+        val sections = captures.mapNotNull { (label, bitmap) ->
+            val image = InputImage.fromBitmap(bitmap, 0)
+            val text = recognizer.process(image).await().text.trim()
+            if (text.isBlank()) null else "$label:\n$text"
+        }
+        val mergedText = sections.joinToString("\n\n")
+        val lines = mergedText
+            .lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotBlank() && !it.endsWith(":") }
+            .toList()
+        SeedPacketOcrResult(
+            mergedText = mergedText,
+            botanicalName = extractLikelyBotanicalName(lines),
+            variety = extractLikelyVariety(lines),
+            brand = extractLikelyBrand(lines)
+        )
+    } finally {
+        recognizer.close()
+    }
+}
+
+private fun extractLikelyBotanicalName(lines: List<String>): String {
+    val botanicalRegex = Regex("\\b([A-Z][a-z]{2,})\\s+([a-z]{3,})(?:\\s+(?:subsp\\.?|var\\.?|x)\\s+[a-z-]+)?")
+    return lines
+        .asSequence()
+        .filterNot { it.contains("seed", ignoreCase = true) || it.contains("brand", ignoreCase = true) }
+        .mapNotNull { line -> botanicalRegex.find(line)?.value }
+        .firstOrNull()
+        .orEmpty()
+}
+
+private fun extractLikelyVariety(lines: List<String>): String {
+    val indicators = listOf("variety", "cultivar", "cv.", "type")
+    val indicatorLine = lines.firstOrNull { line -> indicators.any { marker -> line.contains(marker, ignoreCase = true) } }
+    if (indicatorLine != null) return indicatorLine
+    val quoted = Regex("['\"][^'\"]{3,}['\"]")
+    return lines.mapNotNull { line -> quoted.find(line)?.value?.trim('\'', '"') }.firstOrNull().orEmpty()
+}
+
+private fun extractLikelyBrand(lines: List<String>): String {
+    val indicators = listOf("seed", "seeds", "company", "co.", "brand", "farm")
+    return lines.firstOrNull { line -> indicators.any { marker -> line.contains(marker, ignoreCase = true) } }.orEmpty()
 }
