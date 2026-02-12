@@ -1,0 +1,21 @@
+<resources>
+    <string name="app_name">Frøkatalog</string>
+    <string name="seed_list_title">Frøliste</string>
+    <string name="seed_detail_title">Frødetaljer</string>
+    <string name="add_edit_seed_title">Legg til eller rediger frø</string>
+    <string name="settings_title">Innstillinger</string>
+    <string name="open_details">Åpne detaljer</string>
+    <string name="add_seed">Legg til frø</string>
+    <string name="go_to_settings">Innstillinger</string>
+    <string name="seed_name_label">Frønavn</string>
+    <string name="seed_type_label">Type</string>
+    <string name="seed_notes_label">Notater</string>
+    <string name="save">Lagre</string>
+    <string name="back">Tilbake</string>
+    <string name="language">Språk</string>
+    <string name="notifications">Varsler</string>
+    <string name="notifications_enabled">Aktivert</string>
+    <string name="notifications_disabled">Deaktivert</string>
+    <string name="dummy_setting">Dette er en plassholder for innstillinger.</string>
+    <string name="not_found">Fant ikke frø.</string>
+</resources>

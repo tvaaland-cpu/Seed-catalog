@@ -1,0 +1,21 @@
+<resources>
+    <string name="app_name">Seed Catalog</string>
+    <string name="seed_list_title">Seed List</string>
+    <string name="seed_detail_title">Seed Details</string>
+    <string name="add_edit_seed_title">Add or Edit Seed</string>
+    <string name="settings_title">Settings</string>
+    <string name="open_details">Open details</string>
+    <string name="add_seed">Add Seed</string>
+    <string name="go_to_settings">Settings</string>
+    <string name="seed_name_label">Seed name</string>
+    <string name="seed_type_label">Type</string>
+    <string name="seed_notes_label">Notes</string>
+    <string name="save">Save</string>
+    <string name="back">Back</string>
+    <string name="language">Language</string>
+    <string name="notifications">Notifications</string>
+    <string name="notifications_enabled">Enabled</string>
+    <string name="notifications_disabled">Disabled</string>
+    <string name="dummy_setting">This is a placeholder settings screen.</string>
+    <string name="not_found">Seed not found.</string>
+</resources>
