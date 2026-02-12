@@ -11,6 +11,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface PlantDao {
+    @Query("SELECT * FROM plants ORDER BY id")
+    suspend fun getAll(): List<Plant>
+
     @Query(
         """
         SELECT plants.*
@@ -61,6 +64,9 @@ interface PlantDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(plant: Plant): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(plants: List<Plant>)
+
     @Update
     suspend fun update(plant: Plant)
 
@@ -70,12 +76,18 @@ interface PlantDao {
 
 @Dao
 interface PacketLotDao {
+    @Query("SELECT * FROM packet_lots ORDER BY id")
+    suspend fun getAll(): List<PacketLot>
+
     @Transaction
     @Query("SELECT * FROM packet_lots WHERE plantId = :plantId ORDER BY id DESC")
     fun observeLotsWithPhotos(plantId: Int): Flow<List<PacketLotWithPhotos>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(packetLot: PacketLot): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(packetLots: List<PacketLot>)
 
     @Update
     suspend fun update(packetLot: PacketLot)
@@ -86,8 +98,14 @@ interface PacketLotDao {
 
 @Dao
 interface PhotoDao {
+    @Query("SELECT * FROM photos ORDER BY id")
+    suspend fun getAll(): List<Photo>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(photo: Photo): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(photos: List<Photo>)
 
     @Query("DELETE FROM photos WHERE id = :id")
     suspend fun deleteById(id: Int)
@@ -95,8 +113,14 @@ interface PhotoDao {
 
 @Dao
 interface NoteDao {
+    @Query("SELECT * FROM notes ORDER BY id")
+    suspend fun getAll(): List<Note>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(note: Note): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(notes: List<Note>)
 
     @Query("SELECT * FROM notes WHERE plantId = :plantId ORDER BY createdAtEpochMs DESC")
     fun observeForPlant(plantId: Int): Flow<List<Note>>
@@ -104,8 +128,14 @@ interface NoteDao {
 
 @Dao
 interface SourceAttributionDao {
+    @Query("SELECT * FROM source_attributions ORDER BY id")
+    suspend fun getAll(): List<SourceAttribution>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(sourceAttribution: SourceAttribution): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(sourceAttributions: List<SourceAttribution>)
 
     @Query("SELECT * FROM source_attributions WHERE plantId = :plantId")
     fun observeForPlant(plantId: Int): Flow<List<SourceAttribution>>
