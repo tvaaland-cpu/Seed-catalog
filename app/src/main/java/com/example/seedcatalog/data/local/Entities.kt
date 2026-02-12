@@ -105,6 +105,24 @@ data class Note(
 data class SourceAttribution(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val plantId: Int,
+    val fieldName: String,
     val sourceName: String,
-    val url: String
+    val sourceUrl: String,
+    val retrievedAtEpochMs: Long,
+    val confidence: Double
+)
+
+@Entity(tableName = "gbif_name_match_cache")
+data class GbifNameMatchCache(
+    @PrimaryKey val queryName: String,
+    val responseJson: String,
+    val retrievedAtEpochMs: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "gbif_species_details_cache")
+data class GbifSpeciesDetailsCache(
+    @PrimaryKey val usageKey: Int,
+    val responseJson: String,
+    val vernacularJson: String,
+    val retrievedAtEpochMs: Long = System.currentTimeMillis()
 )

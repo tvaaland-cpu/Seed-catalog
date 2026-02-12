@@ -69,7 +69,10 @@ import com.example.seedcatalog.data.local.Photo
 import com.example.seedcatalog.data.local.PhotoType
 import com.example.seedcatalog.data.local.Plant
 import com.example.seedcatalog.data.local.PlantFilterOptions
+import com.example.seedcatalog.data.repository.AutofillResult
+import com.example.seedcatalog.data.repository.FieldAttribution
 import com.example.seedcatalog.data.repository.OfflineSeedRepository
+import com.example.seedcatalog.data.repository.SpeciesMatchCandidate
 import com.example.seedcatalog.data.BackupManager
 import com.example.seedcatalog.ui.SeedViewModel
 import com.example.seedcatalog.ui.SeedViewModelFactory
@@ -95,7 +98,10 @@ class MainActivity : ComponentActivity() {
             OfflineSeedRepository(
                 plantDao = db.plantDao(),
                 packetLotDao = db.packetLotDao(),
-                photoDao = db.photoDao()
+                photoDao = db.photoDao(),
+                sourceAttributionDao = db.sourceAttributionDao(),
+                gbifNameMatchCacheDao = db.gbifNameMatchCacheDao(),
+                gbifSpeciesDetailsCacheDao = db.gbifSpeciesDetailsCacheDao()
             )
         )
     }
@@ -135,7 +141,7 @@ private fun SeedCatalogApp(seedViewModel: SeedViewModel = viewModel()) {
                 onIndoorOutdoorFilterChange = seedViewModel::updateIndoorOutdoorFilter,
                 onOpenSettings = { navController.navigate(Screen.Settings.route) },
                 onSeedClick = { navController.navigate(Screen.SeedDetail.createRoute(it)) },
-                onSavePlant = { botanicalName, commonName, variety, plantType, lightRequirement, indoorOutdoor, description, medicinalUses, culinaryUses, growingInstructions, notes ->
+                onSavePlant = { botanicalName, commonName, variety, plantType, lightRequirement, indoorOutdoor, description, medicinalUses, culinaryUses, growingInstructions, notes, attributions ->
                     seedViewModel.createPlant(
                         botanicalName,
                         commonName,
@@ -147,11 +153,14 @@ private fun SeedCatalogApp(seedViewModel: SeedViewModel = viewModel()) {
                         medicinalUses,
                         culinaryUses,
                         growingInstructions,
-                        notes
+                        notes,
+                        attributions
                     )
                 },
                 onUpdatePlant = { seedViewModel.updatePlant(it) },
-                onDeletePlant = { seedViewModel.deletePlant(it) }
+                onDeletePlant = { seedViewModel.deletePlant(it) },
+                onFetchAutofillCandidates = { extractedName -> seedViewModel.fetchSpeciesMatchCandidates(extractedName) },
+                onApplyAutofillSelection = { candidate -> seedViewModel.applySpeciesSelection(candidate) }
             )
         }
         composable(
@@ -198,9 +207,11 @@ fun SeedListScreen(
     onIndoorOutdoorFilterChange: (String) -> Unit,
     onOpenSettings: () -> Unit,
     onSeedClick: (Int) -> Unit,
-    onSavePlant: (String, String, String, String, String, String, String, String, String, String, String) -> Unit,
+    onSavePlant: (String, String, String, String, String, String, String, String, String, String, String, Map<String, FieldAttribution>) -> Unit,
     onUpdatePlant: (Plant) -> Unit,
-    onDeletePlant: (Plant) -> Unit
+    onDeletePlant: (Plant) -> Unit,
+    onFetchAutofillCandidates: suspend (String) -> List<SpeciesMatchCandidate>,
+    onApplyAutofillSelection: suspend (SpeciesMatchCandidate) -> AutofillResult?
 ) {
     var editingPlant by remember { mutableStateOf<Plant?>(null) }
     var showCreateDialog by rememberSaveable { mutableStateOf(false) }
@@ -306,7 +317,9 @@ fun SeedListScreen(
         PlantDialog(
             title = "Add Plant",
             onDismiss = { showCreateDialog = false },
-            onSave = { botanicalName, commonName, variety, plantType, lightRequirement, indoorOutdoor, description, medicinalUses, culinaryUses, growingInstructions, notes ->
+            onFetchAutofillCandidates = onFetchAutofillCandidates,
+            onApplyAutofillSelection = onApplyAutofillSelection,
+            onSave = { botanicalName, commonName, variety, plantType, lightRequirement, indoorOutdoor, description, medicinalUses, culinaryUses, growingInstructions, notes, attributions ->
                 onSavePlant(
                     botanicalName,
                     commonName,
@@ -318,7 +331,8 @@ fun SeedListScreen(
                     medicinalUses,
                     culinaryUses,
                     growingInstructions,
-                    notes
+                    notes,
+                    attributions
                 )
                 showCreateDialog = false
             }
@@ -340,7 +354,9 @@ fun SeedListScreen(
             initialGrowingInstructions = plant.growingInstructions,
             initialNotes = plant.notes,
             onDismiss = { editingPlant = null },
-            onSave = { botanicalName, commonName, variety, plantType, lightRequirement, indoorOutdoor, description, medicinalUses, culinaryUses, growingInstructions, notes ->
+            onFetchAutofillCandidates = { emptyList() },
+            onApplyAutofillSelection = { null },
+            onSave = { botanicalName, commonName, variety, plantType, lightRequirement, indoorOutdoor, description, medicinalUses, culinaryUses, growingInstructions, notes, attributions ->
                 onUpdatePlant(
                     plant.copy(
                         botanicalName = botanicalName,
@@ -641,7 +657,9 @@ private fun PlantDialog(
     initialGrowingInstructions: String = "",
     initialNotes: String = "",
     onDismiss: () -> Unit,
-    onSave: (String, String, String, String, String, String, String, String, String, String, String) -> Unit
+    onFetchAutofillCandidates: suspend (String) -> List<SpeciesMatchCandidate>,
+    onApplyAutofillSelection: suspend (SpeciesMatchCandidate) -> AutofillResult?,
+    onSave: (String, String, String, String, String, String, String, String, String, String, String, Map<String, FieldAttribution>) -> Unit
 ) {
     var botanicalName by rememberSaveable { mutableStateOf(initialBotanicalName) }
     var commonName by rememberSaveable { mutableStateOf(initialCommonName) }
@@ -654,24 +672,22 @@ private fun PlantDialog(
     var culinaryUses by rememberSaveable { mutableStateOf(initialCulinaryUses) }
     var growingInstructions by rememberSaveable { mutableStateOf(initialGrowingInstructions) }
     var notes by rememberSaveable { mutableStateOf(initialNotes) }
+    var attributions by remember { mutableStateOf<Map<String, FieldAttribution>>(emptyMap()) }
 
     var frontCapture by remember { mutableStateOf<Bitmap?>(null) }
     var backCapture by remember { mutableStateOf<Bitmap?>(null) }
     var closeUpCapture by remember { mutableStateOf<Bitmap?>(null) }
     var ocrResult by remember { mutableStateOf<SeedPacketOcrResult?>(null) }
     var isScanning by remember { mutableStateOf(false) }
+    var isAutofilling by remember { mutableStateOf(false) }
     var rawTextExpanded by rememberSaveable { mutableStateOf(false) }
+    var autofillCandidates by remember { mutableStateOf<List<SpeciesMatchCandidate>>(emptyList()) }
+    var selectedCandidateKey by rememberSaveable { mutableStateOf<Int?>(null) }
     val scope = rememberCoroutineScope()
 
-    val frontCaptureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) {
-        frontCapture = it
-    }
-    val backCaptureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) {
-        backCapture = it
-    }
-    val closeUpCaptureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) {
-        closeUpCapture = it
-    }
+    val frontCaptureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { frontCapture = it }
+    val backCaptureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { backCapture = it }
+    val closeUpCaptureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { closeUpCapture = it }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -708,24 +724,34 @@ private fun PlantDialog(
                                 if (result.botanicalName.isNotBlank()) botanicalName = result.botanicalName
                                 if (result.variety.isNotBlank()) variety = result.variety
                                 if (result.brand.isNotBlank()) {
-                                    notes = listOf(notes, "Brand: ${result.brand}")
-                                        .filter { it.isNotBlank() }
-                                        .joinToString("\n")
+                                    notes = listOf(notes, "Brand: ${result.brand}").filter { it.isNotBlank() }.joinToString("\n")
                                 }
+                                autofillCandidates = emptyList()
+                                selectedCandidateKey = null
                                 isScanning = false
                             }
                         },
                         enabled = !isScanning && listOf(frontCapture, backCapture, closeUpCapture).any { it != null },
                         modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(if (isScanning) "Scanning…" else "Run OCR and prefill")
-                    }
-                }
-                if (isScanning) {
-                    item { CircularProgressIndicator() }
+                    ) { Text(if (isScanning) "Scanning…" else "Run OCR and prefill") }
                 }
                 ocrResult?.let { result ->
                     item { Text("Likely botanical name: ${result.botanicalName.ifBlank { "Not found" }}") }
+                    item {
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    isAutofilling = true
+                                    val query = result.botanicalName.ifBlank { botanicalName }
+                                    autofillCandidates = onFetchAutofillCandidates(query)
+                                    selectedCandidateKey = null
+                                    isAutofilling = false
+                                }
+                            },
+                            enabled = !isAutofilling && (result.botanicalName.isNotBlank() || botanicalName.isNotBlank()),
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(if (isAutofilling) "Searching GBIF…" else "Autofill from internet") }
+                    }
                     item { Text("Likely variety: ${result.variety.ifBlank { "Not found" }}") }
                     item { Text("Likely brand: ${result.brand.ifBlank { "Not found" }}") }
                     item {
@@ -733,8 +759,31 @@ private fun PlantDialog(
                             Text(if (rawTextExpanded) "Hide raw OCR text" else "Show raw OCR text")
                         }
                     }
-                    if (rawTextExpanded) {
-                        item { Text(result.mergedText.ifBlank { "No text recognized." }) }
+                    if (rawTextExpanded) item { Text(result.mergedText.ifBlank { "No text recognized." }) }
+                }
+                if (isScanning || isAutofilling) item { CircularProgressIndicator() }
+                if (autofillCandidates.isNotEmpty()) {
+                    item { Text("Select internet match", style = MaterialTheme.typography.titleSmall) }
+                    items(autofillCandidates, key = { it.usageKey }) { candidate ->
+                        Card(modifier = Modifier.fillMaxWidth(), onClick = {
+                            selectedCandidateKey = candidate.usageKey
+                            scope.launch {
+                                val result = onApplyAutofillSelection(candidate) ?: return@launch
+                                botanicalName = result.acceptedScientificName
+                                commonName = result.vernacularNames.firstOrNull().orEmpty()
+                                description = listOf(
+                                    "Taxonomy: kingdom ${result.taxonomy.kingdom}, family ${result.taxonomy.family}, genus ${result.taxonomy.genus}",
+                                    "Source: ${result.sourceUrl}"
+                                ).joinToString("\n")
+                                attributions = result.attributions
+                            }
+                        }) {
+                            Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(candidate.scientificName, fontWeight = FontWeight.Bold)
+                                Text("Confidence: ${candidate.confidence}")
+                                Text("Taxonomy: ${candidate.taxonomy.kingdom} > ${candidate.taxonomy.family} > ${candidate.taxonomy.genus}")
+                            }
+                        }
                     }
                 }
                 item { OutlinedTextField(value = botanicalName, onValueChange = { botanicalName = it }, label = { Text("Botanical name") }) }
@@ -751,26 +800,22 @@ private fun PlantDialog(
             }
         },
         confirmButton = {
-            TextButton(
-                onClick = {
-                    onSave(
-                        botanicalName,
-                        commonName,
-                        variety,
-                        plantType,
-                        lightRequirement,
-                        indoorOutdoor,
-                        description,
-                        medicinalUses,
-                        culinaryUses,
-                        growingInstructions,
-                        notes
-                    )
-                },
-                enabled = commonName.isNotBlank() || botanicalName.isNotBlank()
-            ) {
-                Text("Save")
-            }
+            TextButton(onClick = {
+                onSave(
+                    botanicalName,
+                    commonName,
+                    variety,
+                    plantType,
+                    lightRequirement,
+                    indoorOutdoor,
+                    description,
+                    medicinalUses,
+                    culinaryUses,
+                    growingInstructions,
+                    notes,
+                    attributions
+                )
+            }, enabled = commonName.isNotBlank() || botanicalName.isNotBlank()) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )

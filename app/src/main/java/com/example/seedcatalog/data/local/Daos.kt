@@ -137,6 +137,27 @@ interface SourceAttributionDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(sourceAttributions: List<SourceAttribution>)
 
+    @Query("DELETE FROM source_attributions WHERE plantId = :plantId")
+    suspend fun deleteForPlant(plantId: Int)
+
     @Query("SELECT * FROM source_attributions WHERE plantId = :plantId")
     fun observeForPlant(plantId: Int): Flow<List<SourceAttribution>>
+}
+
+@Dao
+interface GbifNameMatchCacheDao {
+    @Query("SELECT * FROM gbif_name_match_cache WHERE queryName = :queryName")
+    suspend fun getByQueryName(queryName: String): GbifNameMatchCache?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(cache: GbifNameMatchCache)
+}
+
+@Dao
+interface GbifSpeciesDetailsCacheDao {
+    @Query("SELECT * FROM gbif_species_details_cache WHERE usageKey = :usageKey")
+    suspend fun getByUsageKey(usageKey: Int): GbifSpeciesDetailsCache?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(cache: GbifSpeciesDetailsCache)
 }

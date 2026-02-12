@@ -214,7 +214,10 @@ class BackupManager(
         .put("id", id)
         .put("plantId", plantId)
         .put("sourceName", sourceName)
-        .put("url", url)
+        .put("fieldName", fieldName)
+        .put("sourceUrl", sourceUrl)
+        .put("retrievedAtEpochMs", retrievedAtEpochMs)
+        .put("confidence", confidence)
 
     private fun Photo.toJson(imagePath: String?) = JSONObject()
         .put("id", id)
@@ -273,8 +276,11 @@ class BackupManager(
         SourceAttribution(
             id = item.getInt("id"),
             plantId = item.getInt("plantId"),
+            fieldName = item.optString("fieldName", ""),
             sourceName = item.getString("sourceName"),
-            url = item.getString("url")
+            sourceUrl = item.optString("sourceUrl", item.optString("url", "")),
+            retrievedAtEpochMs = item.optLong("retrievedAtEpochMs", 0L),
+            confidence = item.optDouble("confidence", 0.0)
         )
     }
 
