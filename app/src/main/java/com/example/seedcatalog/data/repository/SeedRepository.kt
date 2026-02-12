@@ -31,7 +31,7 @@ interface SeedRepository {
         culinaryUses: String,
         growingInstructions: String,
         notes: String
-    )
+    ): Long
 
     suspend fun updatePlant(plant: Plant)
     suspend fun deletePlant(plant: Plant)
@@ -42,4 +42,8 @@ interface SeedRepository {
 
     suspend fun addPhoto(packetLotId: Int, uri: String, type: String)
     suspend fun deletePhoto(photo: Photo)
+
+    suspend fun fetchSpeciesMatchCandidates(extractedName: String): List<SpeciesMatchCandidate>
+    suspend fun applySpeciesSelection(candidate: SpeciesMatchCandidate): AutofillResult?
+    suspend fun saveAutofillAttributions(plantId: Int, attributions: Map<String, FieldAttribution>)
 }

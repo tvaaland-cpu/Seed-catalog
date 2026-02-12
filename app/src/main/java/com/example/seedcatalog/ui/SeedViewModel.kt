@@ -8,7 +8,10 @@ import com.example.seedcatalog.data.local.PacketLotWithPhotos
 import com.example.seedcatalog.data.local.Photo
 import com.example.seedcatalog.data.local.Plant
 import com.example.seedcatalog.data.local.PlantFilterOptions
+import com.example.seedcatalog.data.repository.FieldAttribution
 import com.example.seedcatalog.data.repository.SeedRepository
+import com.example.seedcatalog.data.repository.SpeciesMatchCandidate
+import com.example.seedcatalog.data.repository.AutofillResult
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -82,6 +85,12 @@ class SeedViewModel(private val repository: SeedRepository) : ViewModel() {
     fun lotsWithPhotos(plantId: Int): Flow<List<PacketLotWithPhotos>> =
         repository.observePacketLotsWithPhotos(plantId)
 
+    suspend fun fetchSpeciesMatchCandidates(extractedName: String): List<SpeciesMatchCandidate> =
+        repository.fetchSpeciesMatchCandidates(extractedName)
+
+    suspend fun applySpeciesSelection(candidate: SpeciesMatchCandidate): AutofillResult? =
+        repository.applySpeciesSelection(candidate)
+
     fun createPlant(
         botanicalName: String,
         commonName: String,
@@ -93,9 +102,10 @@ class SeedViewModel(private val repository: SeedRepository) : ViewModel() {
         medicinalUses: String,
         culinaryUses: String,
         growingInstructions: String,
-        notes: String
+        notes: String,
+        attributions: Map<String, FieldAttribution> = emptyMap()
     ) = viewModelScope.launch {
-        repository.createPlant(
+        val plantId = repository.createPlant(
             botanicalName = botanicalName,
             commonName = commonName,
             variety = variety,
@@ -107,7 +117,10 @@ class SeedViewModel(private val repository: SeedRepository) : ViewModel() {
             culinaryUses = culinaryUses,
             growingInstructions = growingInstructions,
             notes = notes
-        )
+        ).toInt()
+        if (attributions.isNotEmpty()) {
+            repository.saveAutofillAttributions(plantId, attributions)
+        }
     }
 
     fun updatePlant(plant: Plant) = viewModelScope.launch {
