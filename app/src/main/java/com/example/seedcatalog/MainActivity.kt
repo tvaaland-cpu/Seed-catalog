@@ -1,7 +1,9 @@
 package com.example.seedcatalog
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -26,18 +28,23 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -59,15 +66,18 @@ import com.example.seedcatalog.data.local.PhotoType
 import com.example.seedcatalog.data.local.Plant
 import com.example.seedcatalog.data.local.PlantFilterOptions
 import com.example.seedcatalog.data.repository.OfflineSeedRepository
+import com.example.seedcatalog.data.BackupManager
 import com.example.seedcatalog.ui.SeedViewModel
 import com.example.seedcatalog.ui.SeedViewModelFactory
 import com.example.seedcatalog.ui.theme.SeedCatalogTheme
+import kotlinx.coroutines.launch
 
 sealed class Screen(val route: String) {
     data object SeedList : Screen("seedList")
     data object SeedDetail : Screen("seedDetail/{plantId}") {
         fun createRoute(plantId: Int) = "seedDetail/$plantId"
     }
+    data object Settings : Screen("settings")
 }
 
 class MainActivity : ComponentActivity() {
@@ -115,6 +125,7 @@ private fun SeedCatalogApp(seedViewModel: SeedViewModel = viewModel()) {
                 onPlantTypeFilterChange = seedViewModel::updatePlantTypeFilter,
                 onLightRequirementFilterChange = seedViewModel::updateLightRequirementFilter,
                 onIndoorOutdoorFilterChange = seedViewModel::updateIndoorOutdoorFilter,
+                onOpenSettings = { navController.navigate(Screen.Settings.route) },
                 onSeedClick = { navController.navigate(Screen.SeedDetail.createRoute(it)) },
                 onSavePlant = { botanicalName, commonName, variety, plantType, lightRequirement, indoorOutdoor, description, medicinalUses, culinaryUses, growingInstructions, notes ->
                     seedViewModel.createPlant(
@@ -157,6 +168,10 @@ private fun SeedCatalogApp(seedViewModel: SeedViewModel = viewModel()) {
                 onDeletePhoto = { seedViewModel.deletePhoto(it) }
             )
         }
+
+        composable(Screen.Settings.route) {
+            SettingsScreen(onBack = { navController.popBackStack() })
+        }
     }
 }
 
@@ -173,6 +188,7 @@ fun SeedListScreen(
     onPlantTypeFilterChange: (String) -> Unit,
     onLightRequirementFilterChange: (String) -> Unit,
     onIndoorOutdoorFilterChange: (String) -> Unit,
+    onOpenSettings: () -> Unit,
     onSeedClick: (Int) -> Unit,
     onSavePlant: (String, String, String, String, String, String, String, String, String, String, String) -> Unit,
     onUpdatePlant: (Plant) -> Unit,
@@ -181,7 +197,16 @@ fun SeedListScreen(
     var editingPlant by remember { mutableStateOf<Plant?>(null) }
     var showCreateDialog by rememberSaveable { mutableStateOf(false) }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("Plants") }) }) { paddingValues ->
+    Scaffold(topBar = {
+        TopAppBar(
+            title = { Text("Plants") },
+            actions = {
+                IconButton(onClick = onOpenSettings) {
+                    Icon(Icons.Default.Settings, contentDescription = "Settings")
+                }
+            }
+        )
+    }) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -522,6 +547,72 @@ private fun PhotoTypeDialog(
         confirmButton = {},
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
+}
+
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SettingsScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val db = remember { AppDatabase.getInstance(context) }
+    val backupManager = remember { BackupManager(context, db) }
+    val scope = rememberCoroutineScope()
+    var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
+
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val result = backupManager.exportToZip(uri)
+            Toast.makeText(context, result.warningMessage ?: "Export completed", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) pendingRestoreUri = uri
+    }
+
+    Scaffold(topBar = { TopAppBar(title = { Text("Settings") }) }) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Button(onClick = { exportLauncher.launch("seed_catalog_backup.zip") }, modifier = Modifier.fillMaxWidth()) {
+                Text("Export backup")
+            }
+            Button(onClick = { restoreLauncher.launch(arrayOf("application/zip")) }, modifier = Modifier.fillMaxWidth()) {
+                Text("Restore backup")
+            }
+            TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
+                Text("Back")
+            }
+        }
+    }
+
+    if (pendingRestoreUri != null) {
+        AlertDialog(
+            onDismissRequest = { pendingRestoreUri = null },
+            title = { Text("Restore backup?") },
+            text = { Text("Import replaces your current database. This action is destructive and cannot be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val uri = pendingRestoreUri
+                    pendingRestoreUri = null
+                    if (uri != null) {
+                        scope.launch {
+                            val result = backupManager.restoreFromZip(uri)
+                            Toast.makeText(context, result.warningMessage ?: "Restore completed", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }) { Text("Restore") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRestoreUri = null }) { Text("Cancel") }
+            }
+        )
+    }
 }
 
 private fun photoTypeDisplay(dbValue: String): String =

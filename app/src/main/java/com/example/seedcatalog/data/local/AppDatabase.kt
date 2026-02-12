@@ -8,7 +8,6 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [Plant::class, PacketLot::class, Photo::class, Note::class, SourceAttribution::class],
     entities = [Plant::class, PlantFts::class, PacketLot::class, Photo::class, Note::class, SourceAttribution::class],
     version = 2,
     exportSchema = false
@@ -36,6 +35,7 @@ abstract class AppDatabase : RoomDatabase() {
                 database.execSQL("ALTER TABLE plants ADD COLUMN medicinalUses TEXT NOT NULL DEFAULT ''")
                 database.execSQL("ALTER TABLE plants ADD COLUMN culinaryUses TEXT NOT NULL DEFAULT ''")
                 database.execSQL("ALTER TABLE plants ADD COLUMN growingInstructions TEXT NOT NULL DEFAULT ''")
+                database.execSQL("ALTER TABLE photos ADD COLUMN type TEXT NOT NULL DEFAULT 'front'")
 
                 database.execSQL("UPDATE plants SET commonName = name")
                 database.execSQL("UPDATE plants SET plantType = type")
@@ -74,12 +74,6 @@ abstract class AppDatabase : RoomDatabase() {
                     .addMigrations(MIGRATION_1_2)
                     .build()
                     .also { INSTANCE = it }
-            }
-        }
-
-        private val MIGRATION_1_2 = object : Migration(1, 2) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE photos ADD COLUMN type TEXT NOT NULL DEFAULT 'front'")
             }
         }
     }
