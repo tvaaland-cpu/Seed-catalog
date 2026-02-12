@@ -1,15 +1,41 @@
 package com.example.seedcatalog.data.local
 
 import androidx.room.Entity
+import androidx.room.Fts4
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "plants")
+@Entity(
+    tableName = "plants",
+    indices = [Index("plantType"), Index("lightRequirement"), Index("indoorOutdoor")]
+)
 data class Plant(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
-    val name: String,
-    val type: String,
+    val botanicalName: String,
+    val commonName: String,
+    val variety: String,
+    val plantType: String,
+    val lightRequirement: String,
+    val indoorOutdoor: String,
+    val description: String,
+    val medicinalUses: String,
+    val culinaryUses: String,
+    val growingInstructions: String,
+    val notes: String
+)
+
+@Fts4(contentEntity = Plant::class)
+@Entity(tableName = "plants_fts")
+data class PlantFts(
+    val botanicalName: String,
+    val commonName: String,
+    val variety: String,
+    val plantType: String,
+    val description: String,
+    val medicinalUses: String,
+    val culinaryUses: String,
+    val growingInstructions: String,
     val notes: String
 )
 

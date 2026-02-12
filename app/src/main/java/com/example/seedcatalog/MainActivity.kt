@@ -10,6 +10,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,6 +25,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -54,6 +57,7 @@ import com.example.seedcatalog.data.local.PacketLotWithPhotos
 import com.example.seedcatalog.data.local.Photo
 import com.example.seedcatalog.data.local.PhotoType
 import com.example.seedcatalog.data.local.Plant
+import com.example.seedcatalog.data.local.PlantFilterOptions
 import com.example.seedcatalog.data.repository.OfflineSeedRepository
 import com.example.seedcatalog.ui.SeedViewModel
 import com.example.seedcatalog.ui.SeedViewModelFactory
@@ -92,13 +96,41 @@ class MainActivity : ComponentActivity() {
 private fun SeedCatalogApp(seedViewModel: SeedViewModel = viewModel()) {
     val navController = rememberNavController()
     val plants by seedViewModel.plants.collectAsStateWithLifecycle()
+    val filterOptions by seedViewModel.filterOptions.collectAsStateWithLifecycle()
+    val searchQuery by seedViewModel.uiSearchQuery.collectAsStateWithLifecycle()
+    val selectedPlantType by seedViewModel.uiPlantType.collectAsStateWithLifecycle()
+    val selectedLightRequirement by seedViewModel.uiLightRequirement.collectAsStateWithLifecycle()
+    val selectedIndoorOutdoor by seedViewModel.uiIndoorOutdoor.collectAsStateWithLifecycle()
 
     NavHost(navController = navController, startDestination = Screen.SeedList.route) {
         composable(Screen.SeedList.route) {
             SeedListScreen(
                 plants = plants,
+                filterOptions = filterOptions,
+                searchQuery = searchQuery,
+                selectedPlantType = selectedPlantType,
+                selectedLightRequirement = selectedLightRequirement,
+                selectedIndoorOutdoor = selectedIndoorOutdoor,
+                onSearchQueryChange = seedViewModel::updateSearchQuery,
+                onPlantTypeFilterChange = seedViewModel::updatePlantTypeFilter,
+                onLightRequirementFilterChange = seedViewModel::updateLightRequirementFilter,
+                onIndoorOutdoorFilterChange = seedViewModel::updateIndoorOutdoorFilter,
                 onSeedClick = { navController.navigate(Screen.SeedDetail.createRoute(it)) },
-                onSavePlant = { name, type, notes -> seedViewModel.createPlant(name, type, notes) },
+                onSavePlant = { botanicalName, commonName, variety, plantType, lightRequirement, indoorOutdoor, description, medicinalUses, culinaryUses, growingInstructions, notes ->
+                    seedViewModel.createPlant(
+                        botanicalName,
+                        commonName,
+                        variety,
+                        plantType,
+                        lightRequirement,
+                        indoorOutdoor,
+                        description,
+                        medicinalUses,
+                        culinaryUses,
+                        growingInstructions,
+                        notes
+                    )
+                },
                 onUpdatePlant = { seedViewModel.updatePlant(it) },
                 onDeletePlant = { seedViewModel.deletePlant(it) }
             )
@@ -128,12 +160,21 @@ private fun SeedCatalogApp(seedViewModel: SeedViewModel = viewModel()) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SeedListScreen(
     plants: List<Plant>,
+    filterOptions: PlantFilterOptions,
+    searchQuery: String,
+    selectedPlantType: String,
+    selectedLightRequirement: String,
+    selectedIndoorOutdoor: String,
+    onSearchQueryChange: (String) -> Unit,
+    onPlantTypeFilterChange: (String) -> Unit,
+    onLightRequirementFilterChange: (String) -> Unit,
+    onIndoorOutdoorFilterChange: (String) -> Unit,
     onSeedClick: (Int) -> Unit,
-    onSavePlant: (String, String, String) -> Unit,
+    onSavePlant: (String, String, String, String, String, String, String, String, String, String, String) -> Unit,
     onUpdatePlant: (Plant) -> Unit,
     onDeletePlant: (Plant) -> Unit
 ) {
@@ -151,12 +192,72 @@ fun SeedListScreen(
             Button(onClick = { showCreateDialog = true }, modifier = Modifier.fillMaxWidth()) {
                 Text("Add Plant")
             }
+
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = onSearchQueryChange,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Search plants") },
+                singleLine = true
+            )
+
+            Text("Plant type")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = selectedPlantType.isBlank(),
+                    onClick = { onPlantTypeFilterChange("") },
+                    label = { Text("All") }
+                )
+                filterOptions.plantTypes.forEach { option ->
+                    FilterChip(
+                        selected = selectedPlantType == option,
+                        onClick = { onPlantTypeFilterChange(option) },
+                        label = { Text(option) }
+                    )
+                }
+            }
+
+            Text("Light")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = selectedLightRequirement.isBlank(),
+                    onClick = { onLightRequirementFilterChange("") },
+                    label = { Text("All") }
+                )
+                filterOptions.lightRequirements.forEach { option ->
+                    FilterChip(
+                        selected = selectedLightRequirement == option,
+                        onClick = { onLightRequirementFilterChange(option) },
+                        label = { Text(option) }
+                    )
+                }
+            }
+
+            Text("Environment")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = selectedIndoorOutdoor.isBlank(),
+                    onClick = { onIndoorOutdoorFilterChange("") },
+                    label = { Text("All") }
+                )
+                filterOptions.indoorOutdoorOptions.forEach { option ->
+                    FilterChip(
+                        selected = selectedIndoorOutdoor == option,
+                        onClick = { onIndoorOutdoorFilterChange(option) },
+                        label = { Text(option) }
+                    )
+                }
+            }
+
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(plants, key = { it.id }) { plant ->
                     Card(modifier = Modifier.fillMaxWidth(), onClick = { onSeedClick(plant.id) }) {
                         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(plant.name, fontWeight = FontWeight.Bold)
-                            Text("Type: ${plant.type}")
+                            Text(plant.commonName.ifBlank { plant.botanicalName }, fontWeight = FontWeight.Bold)
+                            Text("Botanical: ${plant.botanicalName.ifBlank { "N/A" }}")
+                            Text("Type: ${plant.plantType}")
+                            Text("Light: ${plant.lightRequirement}")
+                            Text("Environment: ${plant.indoorOutdoor}")
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 TextButton(onClick = { editingPlant = plant }) { Text("Edit") }
                                 TextButton(onClick = { onDeletePlant(plant) }) { Text("Delete") }
@@ -172,8 +273,20 @@ fun SeedListScreen(
         PlantDialog(
             title = "Add Plant",
             onDismiss = { showCreateDialog = false },
-            onSave = { name, type, notes ->
-                onSavePlant(name, type, notes)
+            onSave = { botanicalName, commonName, variety, plantType, lightRequirement, indoorOutdoor, description, medicinalUses, culinaryUses, growingInstructions, notes ->
+                onSavePlant(
+                    botanicalName,
+                    commonName,
+                    variety,
+                    plantType,
+                    lightRequirement,
+                    indoorOutdoor,
+                    description,
+                    medicinalUses,
+                    culinaryUses,
+                    growingInstructions,
+                    notes
+                )
                 showCreateDialog = false
             }
         )
@@ -182,12 +295,34 @@ fun SeedListScreen(
     editingPlant?.let { plant ->
         PlantDialog(
             title = "Edit Plant",
-            initialName = plant.name,
-            initialType = plant.type,
+            initialBotanicalName = plant.botanicalName,
+            initialCommonName = plant.commonName,
+            initialVariety = plant.variety,
+            initialPlantType = plant.plantType,
+            initialLightRequirement = plant.lightRequirement,
+            initialIndoorOutdoor = plant.indoorOutdoor,
+            initialDescription = plant.description,
+            initialMedicinalUses = plant.medicinalUses,
+            initialCulinaryUses = plant.culinaryUses,
+            initialGrowingInstructions = plant.growingInstructions,
             initialNotes = plant.notes,
             onDismiss = { editingPlant = null },
-            onSave = { name, type, notes ->
-                onUpdatePlant(plant.copy(name = name, type = type, notes = notes))
+            onSave = { botanicalName, commonName, variety, plantType, lightRequirement, indoorOutdoor, description, medicinalUses, culinaryUses, growingInstructions, notes ->
+                onUpdatePlant(
+                    plant.copy(
+                        botanicalName = botanicalName,
+                        commonName = commonName,
+                        variety = variety,
+                        plantType = plantType,
+                        lightRequirement = lightRequirement,
+                        indoorOutdoor = indoorOutdoor,
+                        description = description,
+                        medicinalUses = medicinalUses,
+                        culinaryUses = culinaryUses,
+                        growingInstructions = growingInstructions,
+                        notes = notes
+                    )
+                )
                 editingPlant = null
             }
         )
@@ -242,8 +377,16 @@ fun SeedDetailScreen(
             if (plant == null) {
                 Text("Plant not found")
             } else {
-                Text(plant.name, style = MaterialTheme.typography.headlineSmall)
-                Text("Type: ${plant.type}")
+                Text(plant.commonName.ifBlank { plant.botanicalName }, style = MaterialTheme.typography.headlineSmall)
+                Text("Botanical: ${plant.botanicalName}")
+                Text("Variety: ${plant.variety}")
+                Text("Type: ${plant.plantType}")
+                Text("Light: ${plant.lightRequirement}")
+                Text("Environment: ${plant.indoorOutdoor}")
+                Text("Description: ${plant.description}")
+                Text("Medicinal uses: ${plant.medicinalUses}")
+                Text("Culinary uses: ${plant.culinaryUses}")
+                Text("Growing instructions: ${plant.growingInstructions}")
                 Text("Notes: ${plant.notes}")
                 Button(onClick = { showLotDialog = true }) { Text("Add Packet Lot") }
 
@@ -387,28 +530,69 @@ private fun photoTypeDisplay(dbValue: String): String =
 @Composable
 private fun PlantDialog(
     title: String,
-    initialName: String = "",
-    initialType: String = "",
+    initialBotanicalName: String = "",
+    initialCommonName: String = "",
+    initialVariety: String = "",
+    initialPlantType: String = "",
+    initialLightRequirement: String = "",
+    initialIndoorOutdoor: String = "",
+    initialDescription: String = "",
+    initialMedicinalUses: String = "",
+    initialCulinaryUses: String = "",
+    initialGrowingInstructions: String = "",
     initialNotes: String = "",
     onDismiss: () -> Unit,
-    onSave: (String, String, String) -> Unit
+    onSave: (String, String, String, String, String, String, String, String, String, String, String) -> Unit
 ) {
-    var name by rememberSaveable { mutableStateOf(initialName) }
-    var type by rememberSaveable { mutableStateOf(initialType) }
+    var botanicalName by rememberSaveable { mutableStateOf(initialBotanicalName) }
+    var commonName by rememberSaveable { mutableStateOf(initialCommonName) }
+    var variety by rememberSaveable { mutableStateOf(initialVariety) }
+    var plantType by rememberSaveable { mutableStateOf(initialPlantType) }
+    var lightRequirement by rememberSaveable { mutableStateOf(initialLightRequirement) }
+    var indoorOutdoor by rememberSaveable { mutableStateOf(initialIndoorOutdoor) }
+    var description by rememberSaveable { mutableStateOf(initialDescription) }
+    var medicinalUses by rememberSaveable { mutableStateOf(initialMedicinalUses) }
+    var culinaryUses by rememberSaveable { mutableStateOf(initialCulinaryUses) }
+    var growingInstructions by rememberSaveable { mutableStateOf(initialGrowingInstructions) }
     var notes by rememberSaveable { mutableStateOf(initialNotes) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") })
-                OutlinedTextField(value = type, onValueChange = { type = it }, label = { Text("Type") })
-                OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes") })
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                item { OutlinedTextField(value = botanicalName, onValueChange = { botanicalName = it }, label = { Text("Botanical name") }) }
+                item { OutlinedTextField(value = commonName, onValueChange = { commonName = it }, label = { Text("Common name") }) }
+                item { OutlinedTextField(value = variety, onValueChange = { variety = it }, label = { Text("Variety") }) }
+                item { OutlinedTextField(value = plantType, onValueChange = { plantType = it }, label = { Text("Plant type") }) }
+                item { OutlinedTextField(value = lightRequirement, onValueChange = { lightRequirement = it }, label = { Text("Light") }) }
+                item { OutlinedTextField(value = indoorOutdoor, onValueChange = { indoorOutdoor = it }, label = { Text("Indoor / outdoor") }) }
+                item { OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }) }
+                item { OutlinedTextField(value = medicinalUses, onValueChange = { medicinalUses = it }, label = { Text("Medicinal uses") }) }
+                item { OutlinedTextField(value = culinaryUses, onValueChange = { culinaryUses = it }, label = { Text("Culinary uses") }) }
+                item { OutlinedTextField(value = growingInstructions, onValueChange = { growingInstructions = it }, label = { Text("Growing instructions") }) }
+                item { OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes") }) }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(name, type, notes) }, enabled = name.isNotBlank() && type.isNotBlank()) {
+            TextButton(
+                onClick = {
+                    onSave(
+                        botanicalName,
+                        commonName,
+                        variety,
+                        plantType,
+                        lightRequirement,
+                        indoorOutdoor,
+                        description,
+                        medicinalUses,
+                        culinaryUses,
+                        growingInstructions,
+                        notes
+                    )
+                },
+                enabled = commonName.isNotBlank() || botanicalName.isNotBlank()
+            ) {
                 Text("Save")
             }
         },

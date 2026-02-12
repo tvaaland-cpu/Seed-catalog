@@ -11,3 +11,9 @@ data class PacketLotWithPhotos(
     )
     val photos: List<Photo>
 )
+
+data class PlantFilterOptions(
+    val plantTypes: List<String>,
+    val lightRequirements: List<String>,
+    val indoorOutdoorOptions: List<String>
+)
